@@ -22,6 +22,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -31,7 +32,7 @@ import (
 )
 
 // MaxSize is the maximum size of a log file in bytes.
-var MaxSize uint64 = 1024 * 1024 * 1800
+var MaxSize uint64 = 1024 * 1024 * 64
 
 // logDirs lists the candidate directories for new log files.
 var logDirs []string
@@ -116,9 +117,47 @@ func create(tag string, t time.Time) (f *os.File, filename string, err error) {
 			symlink := filepath.Join(dir, link)
 			os.Remove(symlink)        // ignore err
 			os.Symlink(name, symlink) // ignore err
+			removeOlder(tag, dir)
 			return f, fname, nil
 		}
 		lastErr = err
 	}
 	return nil, "", fmt.Errorf("log: cannot create log: %v", lastErr)
+}
+
+func removeOlder(tag string, dir string) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	oldtime := ""
+	oldName := ""
+	num := 0
+	for _, fi := range files {
+		if !fi.IsDir() { // delete oldest
+			if strings.Contains(fi.Name(), "log."+tag) {
+				num = num + 1
+				tmp := strings.Split(fi.Name(), "log."+tag)
+				if len(tmp) >= 2 {
+					ti := tmp[1]
+					if oldtime == "" {
+						oldtime = ti
+						oldName = filepath.Join(dir, fi.Name())
+					} else {
+						if strings.Compare(oldtime, ti) == 1 {
+							oldtime = ti
+							oldName = filepath.Join(dir, fi.Name())
+						}
+
+					}
+				}
+			}
+		}
+	}
+
+	if oldName != "" && num > 2 {
+		os.Remove(oldName)
+	}
+
 }
